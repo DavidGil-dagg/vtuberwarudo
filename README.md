@@ -20,12 +20,13 @@ Todo funciona sin conexión, en una sola PC con una GPU de 12 GB.
 5. [Uso](#uso)
 6. [Configuración (`config.toml`)](#configuración-configtoml)
 7. [Cómo funciona por dentro](#cómo-funciona-por-dentro)
-8. [Estructura del proyecto](#estructura-del-proyecto)
-9. [Herramientas de línea de comandos](#herramientas-de-línea-de-comandos)
-10. [Tests](#tests)
-11. [Solución de problemas](#solución-de-problemas)
-12. [Limitaciones conocidas](#limitaciones-conocidas)
-13. [Licencias de los modelos](#licencias-de-los-modelos)
+8. [Cómo se hicieron las emociones](#cómo-se-hicieron-las-emociones)
+9. [Estructura del proyecto](#estructura-del-proyecto)
+10. [Herramientas de línea de comandos](#herramientas-de-línea-de-comandos)
+11. [Tests](#tests)
+12. [Solución de problemas](#solución-de-problemas)
+13. [Limitaciones conocidas](#limitaciones-conocidas)
+14. [Licencias de los modelos](#licencias-de-los-modelos)
 
 ---
 
@@ -153,7 +154,7 @@ Abre **http://localhost:8000**. Los tres indicadores de arriba (**LM Studio**, *
 ### Chat
 
 - **Nombres:** arriba a la izquierda. Haz clic en el nombre del personaje para cambiarlo, y escribe el tuyo en *Hablando con*. Enter guarda y Escape deshace. Se guardan en el navegador (`localStorage`) y viajan con cada mensaje:
-  - **El del personaje** se usa en el prompt de Gemma ("Eres Luna.") y en los textos del modelo de decisión, también en el modo visión. Si lo dejas vacío, vuelve al de `config.toml` `[persona] name`.
+  - **El del personaje** se usa en el prompt de Gemma ("Eres Luna.") y en los textos del modelo de decisión, también en el modo visión. Si lo dejas vacío, vuelve al de `config.toml` `[persona] name` (por defecto, *VtuberWarudo*).
   - **El tuyo** le llega a Gemma ("El usuario con el que hablas se llama Dani") y aparece sobre tus mensajes. Vacío = *Tú*.
   - Cambiarlos no toca el historial: los nombres no se guardan en el hilo, así que una conversación antigua se sigue cargando y continúa con los nombres nuevos.
 - **Escribir:** escribe y pulsa Enter (Mayús+Enter para saltar de línea). La respuesta aparece a ritmo de habla y el personaje gesticula mientras tanto.
@@ -185,13 +186,13 @@ El modo visión se pausa durante los turnos de chat y no interrumpe un gesto en 
 | `[decision]` | `backend = "startlux"` (con visión) o `"jev"` (solo texto, en LM Studio); `startlux_url` |
 | `[vision]` | Monitor, intervalo, umbrales, micrófono, Whisper (ver abajo) |
 | `[warudo]` | URL del bridge, duración de las expresiones |
-| `[persona]` | `name`: nombre por defecto del personaje (la web puede cambiarlo); `description`: personalidad (prompt de sistema) |
+| `[persona]` | `name`: nombre por defecto del personaje (`"VtuberWarudo"`; la web puede cambiarlo); `description`: personalidad (prompt de sistema) |
 | `[agent]` | `use_action_tools` (herramientas de gestos para Gemma), carpeta de datos |
 | `[reaction]` | Preguntas al modelo de decisión, duración de la pose de mano |
 | `[speech]` | Ritmo del texto: `chars_per_second` y pausas en comas y puntos |
 | `[animation]` | `crossfade_ms` (fundido entre clips), `max_wait_ms` |
 | `[talk]` | Activar la gesticulación al hablar; máscara `upper` |
-| `[emotions.*]` | Emoción → nombre exacto de la expresión en Warudo |
+| `[emotions.*]` | Emoción → expresión en Warudo (acepta nombres VRM 0.x o 1.0; ver [emociones](#cómo-se-hicieron-las-emociones)) |
 | `[gestures.*]` | Gesto → URI de animación de Warudo (+ `mask`, `look`, `speed`) |
 | `[talk_styles.*]` | Estilos al hablar (clips `…_Loop`; `_Start`/`_End` se deducen) |
 | `[hand_poses.*]` | Poses de dedos (Override Hand Poses) y qué mano |
@@ -291,6 +292,119 @@ Solo el último clip lanzado restablece el *root motion* al terminar, para que n
 
 ---
 
+## Cómo se hicieron las emociones
+
+La cara del personaje no la decide Gemma, sino un **clasificador** (StartLux) que lee la conversación y elige una emoción de una lista cerrada. Después, la app la traduce a una expresión del modelo VRM y el bridge de Warudo la pone durante unos segundos.
+
+```
+ tu mensaje + respuesta de Gemma
+            │
+            ▼
+ ReactionMiddleware.aafter_agent      (reaction.py)
+            │  estado: "User: …\nVtuberWarudo (character): …"
+            │  pregunta: emotion_question + opciones de [emotions.*]
+            ▼
+ StartLux /v1/systemone  ──►  {"emotion": {"choice": "happy", "confidence": 0.82}}
+            │                 (en la misma petición: gesto y pose de mano)
+            ▼
+ config.toml [emotions.happy] expression = "happy"
+            │
+            ▼
+ Avatar.emote → resolve_expression     (avatar.py)
+            │  "happy" → "Joy" si el VRM es 0.x
+            ▼
+ WS {"cmd":"expression","name":"Joy","holdMs":5000}
+            ▼
+ AIChatBridge.cs: ExitAllExpressions → EnterExpression → a neutral tras holdMs
+```
+
+### 1. Por qué un modelo de decisión y no Gemma
+
+- **Gemma solo escribe.** No hay que pedirle que marque la emoción en su texto (JSON, etiquetas…) ni parsearla después, algo que un modelo de 12B puede formatear mal u olvidar.
+- **El clasificador siempre responde algo válido.** Elige entre opciones fijas, así que no hay que parsear texto libre. Si falla, se usa la primera opción (`neutral`).
+- **Es rápido:** ~0,4 s para emoción, gesto y mano juntos, mientras el texto aún se está mostrando.
+- **Gemma conserva el control explícito:** si le pides «pon cara de enfado», usa la herramienta `set_expression` y el clasificador no pregunta por la emoción en ese turno (`want_emotion=False`), para no pisarla.
+
+Al principio se usó `jev-style-qwen3.5-2b-decision` en LM Studio (prompt `[State] [Question] [Options] Answer:` y una sola letra). Se sustituyó por StartLux porque además ve imágenes (modo visión) y devuelve la probabilidad de cada opción. El backend se elige en `[decision] backend`; los dos usan las mismas preguntas.
+
+### 2. La pregunta y las opciones (`config.toml`)
+
+```toml
+[reaction]
+emotion_question = "Which emotion does the character show in their reply to the user?"
+
+[emotions.happy]
+label = "happy, joyful"      # lo que lee el clasificador (en inglés)
+expression = "happy"         # expresión de Warudo que se pone
+```
+
+- **El estado** es solo el último intercambio (`build_state_text`), con el nombre del personaje: `User: … / VtuberWarudo (character): …`. Se recorta a `max_state_chars`.
+- **Los `label` deciden la calidad.** Están en inglés, como las preguntas, y llevan varias palabras por emoción (`"sad, sorry, disappointed"`) para darle más pistas al clasificador en los casos intermedios.
+- **Siete emociones:** `neutral`, `happy`, `fun` (juguetona), `sad`, `angry`, `surprised` y `shy`.
+- **Varias emociones pueden compartir expresión.** El modelo no tiene cara de vergüenza, así que `shy` y `fun` usan `relaxed` (sonrisa suave). Siguen siendo opciones distintas para el clasificador y en las etiquetas de la web.
+- **`expression = ""`** (en `neutral`) quita todas las expresiones.
+
+### 3. Cuándo se aplica
+
+La expresión no se pone en cuanto se decide, sino **en el momento en que empieza el gesto** de la reacción (`Avatar.plan_reaction`): el gesto entra en la coreografía del habla y su callback `on_start` aplica a la vez cara, pose de mano y mirada. Así la cara cambia junto con el cuerpo, a mitad del texto, y no antes de que el personaje "diga" nada.
+
+- Si no hay gesto, o Warudo no está conectado, la cara se aplica al momento.
+- Si el gesto se descarta (no cabe), la cara se aplica igualmente.
+- La expresión dura `[warudo] expression_hold_ms` (5 s). El temporizador lo lleva el bridge, en `OnUpdate`, y al vencer vuelve a neutral. Una expresión nueva reinicia el temporizador.
+
+### 4. Nombres de las expresiones (VRM 0.x y 1.0)
+
+Las expresiones que importa Warudo del VRM se llaman distinto según la versión del modelo: **VRM 1.0** usa `happy, sad, relaxed, angry, surprised` y **VRM 0.x** usa `Joy, Sorrow, Fun, Angry, Surprised`. `resolve_expression` acepta cualquiera de las dos y devuelve el nombre que tiene de verdad el personaje (sin distinguir mayúsculas). Por eso `config.toml` puede usar los nombres de VRM 1.0 aunque el personaje sea VRM 0.x.
+
+El bridge también compara sin distinguir mayúsculas y, si la expresión no existe, responde `unknown expression` con la lista de las que hay.
+
+### 5. Si el personaje no tiene expresiones
+
+Al conectar con Warudo, `Avatar.ensure_expressions` pide `info` y comprueba que existen todas las expresiones de `[emotions.*]`. Si falta alguna y `auto_import_expressions = true`:
+
+1. Envía `importVrmExpressions`. El bridge llama a `TriggerImportVRMExpressions()`, lo mismo que el botón *Import VRM Expressions* del personaje.
+2. Como la importación es asíncrona, vuelve a pedir `info` cada 250 ms durante 5 s como máximo.
+3. Registra en el log qué se importó y recuerda **guardar la escena**.
+
+Si al poner una expresión todavía no se conocían las del personaje, `emote` las consulta y reintenta una vez.
+
+### 6. Cómo se ve en la web
+
+El servidor emite dos eventos:
+
+- **`reaction`**, con lo decidido (`😊 happy`, gesto y mano). Aparece como etiquetas bajo la respuesta.
+- **`reaction_applied`**, con lo que Warudo confirmó de verdad. Las etiquetas de lo que no se aplicó se muestran tachadas.
+
+El piloto **StartLux** se comprueba cada 10 s: en rojo significa que todas las emociones van a salir `neutral`.
+
+### 7. En el modo visión
+
+Se usan las mismas emociones con una pregunta propia (`emotion_question` de `[vision]`; su valor por defecto está en `config.py`), y la captura de pantalla va en la misma petición. La diferencia es que **`neutral` se excluye**: el modo visión solo actúa cuando ha decidido reaccionar, y una reacción con cara neutra no se notaba.
+
+### 8. Lo que falló por el camino
+
+| Síntoma | Causa | Arreglo |
+|---|---|---|
+| Siempre `neutral` y sin gesto | StartLux se cargó en LM Studio en vez de con `start-startlux.ps1`, y todas las decisiones fallaban en silencio | Piloto StartLux en la web y aviso en el log |
+| `unknown expression "happy"` | La escena se había guardado sin las expresiones, y al reimportarlas salieron con nombres VRM 0.x (`Joy`) | `importVrmExpressions` automático y alias VRM 0.x / 1.0 |
+| La web mostraba la emoción aunque Warudo no la pusiera | Las etiquetas reflejaban lo decidido, no lo aplicado | Evento `reaction_applied` y etiquetas tachadas |
+
+### 9. Añadir o cambiar una emoción
+
+1. Mira qué expresiones tiene el personaje: `uv run vtuber-cli info`. Puedes crear una nueva en Warudo combinando *blendshapes*.
+2. Añade la tabla en `config.toml`:
+   ```toml
+   [emotions.sleepy]
+   label = "sleepy, tired, bored"
+   expression = "Sleepy"
+   ```
+   `neutral` debe seguir siendo la primera (es la opción por defecto). El máximo es 26 emociones.
+3. Pruébala sin el chat: `uv run vtuber-cli send emotion sleepy`.
+4. Comprueba que el clasificador la elige cuando toca: `uv run vtuber-cli decisions`. Si no, cambia las palabras de `label`.
+5. Reinicia `vtuber-chat`. La herramienta `set_expression` de Gemma también la incluye, porque sus opciones salen de la misma tabla.
+
+---
+
 ## Estructura del proyecto
 
 ```
@@ -317,7 +431,7 @@ scripts/
   start-startlux.ps1         Arranca llama-server + startlux-decide
   load-models.ps1            Carga Gemma en LM Studio (y jev si se pide)
   install-playground.ps1     Copia el bridge a Warudo
-tests/                       pytest: decisiones, animación, ritmo de habla, visión, micrófono
+tests/                       pytest: nombres, decisiones, animación, ritmo de habla, visión, micrófono, expresiones
 tools/  models/  data/       Binarios, modelos descargados y datos locales (no versionados)
 ```
 
@@ -354,6 +468,7 @@ Hay 53 tests y no necesitan GPU, Warudo ni LM Studio:
 - **Ritmo de habla:** orden de eventos y duración.
 - **Visión:** pantalla quieta → no repite reacciones; la voz siempre provoca una mirada; recorte del vídeo; toda reacción mueve el cuerpo.
 - **Micrófono:** frases de un micro flojo sin trocear; umbral adaptado a una sala ruidosa.
+- **Expresiones:** los nombres VRM 1.0 funcionan en personajes VRM 0.x y al revés, sin distinguir mayúsculas.
 
 Para comprobar que el script C# compila contra los DLL reales de Warudo, crea un `.csproj` net48 que referencie `Warudo_Data\Managed\*.dll` y ejecuta `dotnet build`.
 
@@ -378,6 +493,8 @@ Para comprobar que el script C# compila contra los DLL reales de Warudo, crea un
 - **Respuestas vacías o muy lentas:** el *thinking* de Gemma está activo. Comprueba `reasoning_effort = "none"`.
 
 ### Las emociones no se ven (siempre *neutral*, sin gesto)
+
+El recorrido completo está en [Cómo se hicieron las emociones](#cómo-se-hicieron-las-emociones).
 
 - **Indicador StartLux en rojo:** el servidor de decisiones no está arrancado. Cada decisión falla y se usa la opción por defecto. Arranca `scripts\start-startlux.ps1`.
   - **No basta con cargar StartLux en LM Studio:** necesita su propio servidor (lectura bidireccional del prompt). Además, en LM Studio ocupa VRAM que necesita Gemma.
