@@ -152,8 +152,14 @@ Abre **http://localhost:8000**. Los tres indicadores de arriba (**LM Studio**, *
 
 ### Chat
 
-- **Escribir:** escribe y pulsa Enter. La respuesta aparece a ritmo de habla y el personaje gesticula mientras tanto.
-- **Etiquetas:** bajo cada respuesta salen las de la reacción, por ejemplo `🗣️ excited · 😊 happy · 🎉 cheer · 👍 thumbs_up`. Una etiqueta atenuada significa que Warudo no pudo aplicarla, por ejemplo una expresión que no existe en el personaje.
+- **Nombres:** arriba a la izquierda. Haz clic en el nombre del personaje para cambiarlo, y escribe el tuyo en *Hablando con*. Enter guarda y Escape deshace. Se guardan en el navegador (`localStorage`) y viajan con cada mensaje:
+  - **El del personaje** se usa en el prompt de Gemma ("Eres Luna.") y en los textos del modelo de decisión, también en el modo visión. Si lo dejas vacío, vuelve al de `config.toml` `[persona] name`.
+  - **El tuyo** le llega a Gemma ("El usuario con el que hablas se llama Dani") y aparece sobre tus mensajes. Vacío = *Tú*.
+  - Cambiarlos no toca el historial: los nombres no se guardan en el hilo, así que una conversación antigua se sigue cargando y continúa con los nombres nuevos.
+- **Escribir:** escribe y pulsa Enter (Mayús+Enter para saltar de línea). La respuesta aparece a ritmo de habla y el personaje gesticula mientras tanto.
+- **Etiquetas:** bajo cada respuesta salen las de la reacción, por ejemplo `🗣️ excited`, `😊 happy`, `🎉 cheer`, `👍 thumbs_up`, y `🛠 perform_action` si Gemma usó una herramienta. Una etiqueta tachada y con borde discontinuo significa que Warudo no pudo aplicarla, por ejemplo una expresión que no existe en el personaje.
+- **Pilotos:** LM Studio, StartLux (o jev) y Warudo en verde si responden, en rojo si no.
+- **Tema:** el botón redondo alterna automático (el del sistema), claro y oscuro.
 - **Pedir gestos:** "¡baila!" o "hazme el signo de la paz" hacen que Gemma use sus herramientas (`perform_action`, `set_hand_pose`…).
 - **Nueva conversación:** empieza otro hilo. La memoria de `AGENTS.md` se mantiene entre hilos.
 - **Overlay para OBS:** `http://localhost:8000/?overlay=1` muestra solo los mensajes con fondo transparente.
@@ -179,7 +185,7 @@ El modo visión se pausa durante los turnos de chat y no interrumpe un gesto en 
 | `[decision]` | `backend = "startlux"` (con visión) o `"jev"` (solo texto, en LM Studio); `startlux_url` |
 | `[vision]` | Monitor, intervalo, umbrales, micrófono, Whisper (ver abajo) |
 | `[warudo]` | URL del bridge, duración de las expresiones |
-| `[persona]` | Nombre y personalidad del personaje (prompt de sistema) |
+| `[persona]` | `name`: nombre por defecto del personaje (la web puede cambiarlo); `description`: personalidad (prompt de sistema) |
 | `[agent]` | `use_action_tools` (herramientas de gestos para Gemma), carpeta de datos |
 | `[reaction]` | Preguntas al modelo de decisión, duración de la pose de mano |
 | `[speech]` | Ritmo del texto: `chars_per_second` y pausas en comas y puntos |
@@ -214,6 +220,8 @@ El modo visión se pausa durante los turnos de chat y no interrumpe un gesto en 
 ## Cómo funciona por dentro
 
 ### Turno de chat
+
+La web envía por el WebSocket `/ws` `{"type":"user","text":…,"thread":…,"character":"Luna","user_name":"Dani"}` (y `{"type":"names",…}` al conectar o al cambiar los nombres, para el modo visión). Los nombres van en el contexto del turno (`TurnContext`, `agent.astream(..., context=...)`) y `PersonaPromptMiddleware` los antepone al prompt de sistema en cada llamada a Gemma, sin recrear el agente ni guardarlos en el hilo.
 
 1. **Estilo al hablar (antes de Gemma, ~0,4 s):** StartLux elige cómo gesticular (`normal`, `explaining`, `excited`, `calm`, `scolding`…) a partir de tu mensaje, y empieza el clip *Start*. Se decide antes y no en paralelo porque LM Studio pondría la petición en cola detrás del procesamiento de Gemma (~8 s).
 2. **Gemma genera la respuesta** (1–3 s). Puede usar herramientas: `perform_action`, `set_expression`, `set_hand_pose`, `look_at`, y `edit_file` sobre su memoria.
@@ -291,6 +299,7 @@ pyproject.toml / uv.lock     Dependencias (uv)
 src/vtuber_warudo/
   server.py                  FastAPI: web, WebSocket del chat, /api/vision, turnos
   agent.py                   Deep Agent: modelo, prompt de personaje, memoria, perfil sin herramientas sobrantes
+  persona.py                 Nombres por turno (personaje y usuario) y middleware que los pone en el prompt
   tools.py                   Herramientas de gestos para Gemma
   reaction.py                Middleware: estilo al hablar (antes) y reacción (después)
   decision.py                Clientes de decisión: StartLux (/v1/systemone, imágenes) y jev (LM Studio)
@@ -337,8 +346,9 @@ uv run vtuber-cli vision-test "¡he ganado!"    # una decisión del modo visión
 uv run pytest
 ```
 
-Hay 42 tests y no necesitan GPU, Warudo ni LM Studio:
+Hay 53 tests y no necesitan GPU, Warudo ni LM Studio:
 
+- **Nombres:** el personaje y el usuario de cada mensaje llegan al prompt de Gemma y a los textos del modelo de decisión sin recrear el agente; cambiarlos a mitad de hilo no altera el historial; sin nombre se usa el de `config.toml`.
 - **Decisiones:** formato del prompt de decisión y parseo de la letra elegida.
 - **Animación:** encadenado sin huecos ni cortes, el End coincide con el final del texto, el gesto llega tarde y sustituye al Loop, aceleración de gestos que no caben.
 - **Ritmo de habla:** orden de eventos y duración.

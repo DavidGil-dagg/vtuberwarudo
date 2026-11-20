@@ -127,6 +127,8 @@ class VisionMode:
         self._last_thumb = None  # miniatura de la última captura analizada
         self._focused = False  # la última imagen era solo la zona en movimiento
         self._last_gesture: str | None = None
+        # Nombre del personaje que puso el usuario en la web (el servidor lo actualiza)
+        self.character = cfg.persona.name
 
     @property
     def running(self) -> bool:
@@ -205,7 +207,7 @@ class VisionMode:
             if self._focused else "the streamer's screen"
         )
         return (
-            f"{self.cfg.persona.name}, a VTuber character, is watching {where} live: <image>\n"
+            f"{self.character or self.cfg.persona.name}, a VTuber character, is watching {where} live: <image>\n"
             f"What the streamer just said out loud: {heard if heard else '(nothing)'}\n"
             f"The character's previous reaction: {last}\n"
             f"Language of the stream: {v.language or 'unknown'}"

@@ -20,6 +20,7 @@ from .agent import build_agent
 from .avatar import Avatar
 from .config import PROJECT_ROOT, Config, load_config
 from .decision import make_decision_client
+from .persona import TurnContext
 from .speech import SpeechPacer
 from .vision import VisionMode
 from .warudo import WarudoClient
@@ -181,10 +182,13 @@ async def _safe_send(ws: WebSocket, data: dict) -> None:
         await ws.send_json(data)
 
 
-async def run_turn(st: AppState, ws: WebSocket, text: str, thread: str) -> None:
+async def run_turn(st: AppState, ws: WebSocket, text: str, thread: str, ctx: TurnContext | None = None) -> None:
     if st.cfg.reaction.on_user_message:
         await st.avatar.gesture(st.cfg.reaction.on_user_message)
 
+    # Los nombres (personaje y usuario) van en el contexto del turno, no en el hilo:
+    # así se pueden cambiar sin tocar el historial guardado.
+    ctx = ctx or TurnContext(character=st.cfg.persona.name)
     config = {"configurable": {"thread_id": thread}}
     inputs = {"messages": [{"role": "user", "content": text}]}
 
@@ -195,7 +199,9 @@ async def run_turn(st: AppState, ws: WebSocket, text: str, thread: str) -> None:
     st.turns_active += 1  # el modo visión no reacciona mientras se habla
     speaking = asyncio.create_task(pacer.run())
     try:
-        async for mode, data in st.agent.astream(inputs, config=config, stream_mode=["messages", "updates", "custom"]):
+        async for mode, data in st.agent.astream(
+            inputs, config=config, context=ctx, stream_mode=["messages", "updates", "custom"]
+        ):
             if mode == "messages":
                 token, meta = data
                 if (
@@ -254,13 +260,20 @@ async def ws_endpoint(ws: WebSocket):
     try:
         while True:
             msg = await ws.receive_json()
-            if msg.get("type") == "user" and (text := str(msg.get("text", "")).strip()):
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("type") == "names":
+                # La web avisa al conectar y al cambiar los nombres (el modo visión usa el del personaje)
+                st.vision.character = TurnContext.from_message(st.cfg, msg).character
+            elif msg.get("type") == "user" and (text := str(msg.get("text", "")).strip()):
                 thread = str(msg.get("thread") or "default")
                 if busy.locked():
                     await ws.send_json({"type": "error", "text": "Espera a que termine la respuesta anterior."})
                     continue
+                ctx = TurnContext.from_message(st.cfg, msg)
+                st.vision.character = ctx.character
                 async with busy:
-                    await run_turn(st, ws, text, thread)
+                    await run_turn(st, ws, text, thread, ctx)
     except WebSocketDisconnect:
         pass
     except Exception as exc:  # noqa: BLE001 - p.ej. WebSocketDisconnected al recargar la página

@@ -12,6 +12,7 @@ from langchain_openai import ChatOpenAI
 from .avatar import Avatar
 from .config import Config
 from .decision import DecisionClient
+from .persona import PersonaPromptMiddleware, TurnContext
 from .reaction import ReactionMiddleware
 from .tools import build_tools
 
@@ -79,7 +80,8 @@ def persona_prompt(cfg: Config, with_tools: bool) -> str:
             "Si el usuario te pide explícitamente una acción física (bailar, saludar, hacer una reverencia, poner una cara...), "
             "llama primero a la herramienta adecuada (perform_action, set_expression, set_hand_pose o look_at) y luego responde."
         )
-    return f"Eres {p.name}.\n{p.description}\n\nReglas:\n" + "\n".join(f"- {r}" for r in rules)
+    # "Eres <nombre>." y el nombre del usuario los antepone PersonaPromptMiddleware en cada turno
+    return f"{p.description.strip()}\n\nReglas:\n" + "\n".join(f"- {r}" for r in rules)
 
 
 def ensure_memory(cfg: Config) -> None:
@@ -106,7 +108,8 @@ def build_agent(cfg: Config, avatar: Avatar, decision: DecisionClient, checkpoin
         model=model,
         tools=tools,
         system_prompt=persona_prompt(cfg, with_tools=bool(tools)),
-        middleware=[ReactionMiddleware(cfg, decision, avatar)],
+        middleware=[PersonaPromptMiddleware(cfg), ReactionMiddleware(cfg, decision, avatar)],
+        context_schema=TurnContext,
         memory=[MEMORY_PATH],
         backend=backend,
         checkpointer=checkpointer,

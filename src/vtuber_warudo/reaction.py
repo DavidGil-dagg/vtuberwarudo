@@ -21,6 +21,7 @@ from langgraph.runtime import Runtime
 from .avatar import Avatar
 from .config import Config
 from .decision import Decision, DecisionClient, Question, StartLuxClient, clip_state
+from .persona import character_name
 from .speech import speech_seconds
 from .tools import PERFORM_ACTION, SET_EXPRESSION, SET_HAND_POSE
 
@@ -53,8 +54,9 @@ class ReactionChoice:
         }
 
 
-def build_state_text(cfg: Config, user_text: str, reply_text: str) -> str:
-    text = f"User: {user_text.strip()}\n{cfg.persona.name} (character): {reply_text.strip()}"
+def build_state_text(cfg: Config, user_text: str, reply_text: str, character: str | None = None) -> str:
+    name = character or cfg.persona.name
+    text = f"User: {user_text.strip()}\n{name} (character): {reply_text.strip()}"
     return clip_state(text, cfg.reaction.max_state_chars)
 
 
@@ -91,9 +93,10 @@ async def decide_reaction(
     want_emotion: bool = True,
     want_gesture: bool = True,
     want_hand: bool = True,
+    character: str | None = None,
 ) -> ReactionChoice:
     """Emoción, gesto y pose de mano en una sola llamada al modelo de decisión."""
-    state = build_state_text(cfg, user_text, reply_text)
+    state = build_state_text(cfg, user_text, reply_text, character)
     r = cfg.reaction
     qs = reaction_questions(
         cfg, emotion_q=r.emotion_question, gesture_q=r.gesture_question, hand_q=r.hand_question,
@@ -103,10 +106,13 @@ async def decide_reaction(
     return ReactionChoice(_choice(answers, "emotion"), _choice(answers, "gesture"), _choice(answers, "hand"))
 
 
-async def decide_talk_style(cfg: Config, decision: DecisionClient | StartLuxClient, user_text: str) -> Choice:
+async def decide_talk_style(
+    cfg: Config, decision: DecisionClient | StartLuxClient, user_text: str, character: str | None = None
+) -> Choice:
     if not cfg.talk.enabled or len(cfg.talk_styles) < 2:
         return Choice()
-    state = clip_state(f"User says to {cfg.persona.name}: {user_text.strip()}", cfg.reaction.max_state_chars)
+    name = character or cfg.persona.name
+    state = clip_state(f"User says to {name}: {user_text.strip()}", cfg.reaction.max_state_chars)
     answers = await decision.decide_many(state, {"talk": Question(cfg.talk.question, options_of(cfg.talk_styles))})
     return _choice(answers, "talk")
 
@@ -155,7 +161,9 @@ class ReactionMiddleware(AgentMiddleware):
         # Se decide ANTES de llamar a Gemma (~150 ms con la GPU libre). Si se lanza en
         # paralelo, LM Studio encola la petición detrás del prefill de Gemma (~8 s).
         try:
-            choice = await decide_talk_style(self.cfg, self.decision, msgs[-1].text)
+            choice = await decide_talk_style(
+                self.cfg, self.decision, msgs[-1].text, character_name(self.cfg, runtime.context)
+            )
             if choice.key:
                 applied = self.avatar.start_talking(choice.key)
                 log.info("Estilo al hablar: %s (%s ms)", choice.key, choice.decision.ms if choice.decision else "?")
@@ -182,6 +190,7 @@ class ReactionMiddleware(AgentMiddleware):
             want_emotion=SET_EXPRESSION not in used,
             want_gesture=PERFORM_ACTION not in used,
             want_hand=SET_HAND_POSE not in used,
+            character=character_name(self.cfg, runtime.context),
         )
         # El gesto entra en la coreografía (tras el Start, dentro del texto); la expresión y la
         # pose de mano se aplican cuando empieza. Si Gemma ya hizo un gesto con la herramienta,

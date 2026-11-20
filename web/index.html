@@ -2,46 +2,81 @@
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
   <title>VtuberWarudo Chat</title>
-  <link rel="stylesheet" href="/static/style.css?v=2" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230b7a75'/%3E%3Cpath d='M10 9v14M10 16h12' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap" />
+  <link rel="stylesheet" href="/static/style.css?v=3" />
 </head>
 <body>
+  <a class="skip" href="#input">Ir a escribir un mensaje</a>
   <div class="app">
     <header class="top">
       <div class="who">
-        <span class="avatar-dot" aria-hidden="true"></span>
-        <h1 id="name">Personaje</h1>
+        <span class="badge" id="badge" aria-hidden="true">S</span>
+        <div class="names">
+          <label class="sr-only" for="character-name">Nombre del personaje</label>
+          <input id="character-name" class="character-name" type="text" maxlength="40" spellcheck="false"
+                 autocomplete="off" placeholder="Personaje" title="Nombre del personaje (haz clic para cambiarlo)" />
+          <div class="talking-to">
+            <label for="user-name">Hablando con</label>
+            <input id="user-name" class="user-name" type="text" maxlength="40" spellcheck="false"
+                   autocomplete="off" placeholder="tu nombre" title="Tu nombre: el personaje lo sabrá" />
+          </div>
+        </div>
       </div>
-      <div class="status">
-        <span class="pill" id="st-lm" title="LM Studio">LM Studio</span>
-        <span class="pill" id="st-dec" title="Modelo de decisión (emociones y gestos). Si está en rojo, arranca scripts\start-startlux.ps1">StartLux</span>
-        <span class="pill" id="st-warudo" title="Warudo (AI Chat Bridge)">Warudo</span>
-        <button id="vision-btn" class="ghost" type="button" title="El personaje reacciona a tu pantalla y a tu micrófono" hidden>👁 Modo visión</button>
-        <button id="new-chat" class="ghost" type="button" title="Empezar una conversación nueva">Nueva conversación</button>
+
+      <ul class="status" aria-label="Estado de los servicios">
+        <li class="lamp" id="st-lm" title="LM Studio (Gemma, el modelo que escribe las respuestas)">
+          <span class="dot" aria-hidden="true"></span><span class="lamp-name">LM Studio</span><span class="sr-only lamp-state">sin comprobar</span>
+        </li>
+        <li class="lamp" id="st-dec" title="Modelo de decisión (emociones y gestos). Si está en rojo, arranca scripts\start-startlux.ps1">
+          <span class="dot" aria-hidden="true"></span><span class="lamp-name">StartLux</span><span class="sr-only lamp-state">sin comprobar</span>
+        </li>
+        <li class="lamp" id="st-warudo" title="Warudo (AI Chat Bridge)">
+          <span class="dot" aria-hidden="true"></span><span class="lamp-name">Warudo</span><span class="sr-only lamp-state">sin comprobar</span>
+        </li>
+      </ul>
+
+      <div class="actions">
+        <button id="vision-btn" class="btn" type="button" aria-pressed="false"
+                title="El personaje reacciona a tu pantalla y a tu micrófono" hidden>
+          <span aria-hidden="true">👁</span> <span class="label">Modo visión</span>
+        </button>
+        <button id="new-chat" class="btn" type="button" title="Empezar una conversación nueva (la anterior queda guardada)">
+          Nueva conversación
+        </button>
+        <button id="theme-btn" class="btn icon" type="button" title="Tema: automático" aria-label="Cambiar tema (ahora: automático)">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 3a9 9 0 1 0 0 18V3Z"/><circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+        </button>
       </div>
     </header>
 
-    <section id="vision-panel" class="vision-panel" hidden aria-live="polite">
+    <section id="vision-panel" class="vision-panel" hidden aria-labelledby="vision-title">
       <div class="vision-head">
         <span class="live-dot" aria-hidden="true"></span>
-        <strong>Modo visión</strong>
+        <h2 id="vision-title">Modo visión</h2>
         <span id="vision-mic" class="muted"></span>
-        <span class="meter" title="Nivel del micrófono (la raya marca a partir de dónde se considera voz)">
+        <span class="meter" role="meter" aria-label="Nivel del micrófono" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+              title="Nivel del micrófono (la raya marca a partir de dónde se considera voz)">
           <span id="meter-fill" class="meter-fill"></span>
           <span id="meter-thr" class="meter-thr"></span>
         </span>
       </div>
-      <ul id="vision-log" class="vision-log"></ul>
+      <ul id="vision-log" class="vision-log" aria-live="polite" aria-label="Reacciones del modo visión"></ul>
     </section>
 
-    <main id="log" class="log" aria-live="polite"></main>
+    <main id="log" class="log" aria-live="polite" aria-label="Conversación"></main>
 
     <form id="composer" class="composer" autocomplete="off">
-      <textarea id="input" rows="1" placeholder="Escribe un mensaje…" aria-label="Mensaje"></textarea>
-      <button id="send" type="submit">Enviar</button>
+      <label class="sr-only" for="input">Mensaje</label>
+      <textarea id="input" rows="1" placeholder="Escribe un mensaje…"></textarea>
+      <button id="send" class="send" type="submit">Enviar</button>
     </form>
   </div>
-  <script src="/static/app.js?v=2"></script>
+  <script src="/static/app.js?v=3"></script>
 </body>
 </html>
