@@ -1,0 +1,300 @@
+# Configuración de VtuberWarudo
+# Las tablas [emotions.*] y [gestures.*] se presentan al modelo de decisión EN ESTE ORDEN.
+# La primera de cada lista es la opción por defecto si el modelo responde algo inválido.
+
+[lmstudio]
+base_url = "http://localhost:1234/v1"
+chat_model = "google/gemma-4-12b-qat"
+decision_model = "jev-style-qwen3.5-2b-decision"
+temperature = 0.8
+max_tokens = 512
+# Gemma 4 piensa (reasoning) por defecto en LM Studio, lo que multiplica la latencia.
+# "none" lo desactiva; pon "low"/"medium" si quieres respuestas más elaboradas, o "" para el default del modelo.
+reasoning_effort = "none"
+timeout_s = 120
+
+[decision]
+# "startlux": StartLux Decision 4B (con visión), servido por scripts\start-startlux.ps1
+# "jev":      jev-style-qwen3.5-2b-decision en LM Studio (solo texto; sin modo visión)
+backend = "startlux"
+startlux_url = "http://127.0.0.1:8090"
+
+[vision]
+# Modo visión (botón 👁 en la web): el personaje reacciona con el cuerpo a tu pantalla
+# y a lo que dices por el micrófono. Requiere backend = "startlux".
+monitor = 2            # 1 = pantalla derecha (x=1920), 2 = pantalla izquierda (x=0)
+max_side = 768         # px del lado mayor de la captura (~600 tokens de imagen)
+interval_s = 4.0       # cada cuánto mira la pantalla si no hablas
+cooldown_s = 6.0       # mínimo entre dos reacciones a la pantalla
+react_threshold = 0.5  # P(hay algo a lo que reaccionar) en la pantalla; vacía ~0.03, vídeo/web ~0.55-0.8
+speech_threshold = 0.35 # umbral cuando acabas de decir algo (reacciona más a tu voz)
+scene_change_threshold = 0.015 # fracción de pantalla que debe cambiar (0..1) para volver a mirar si no hablaste
+                              # (el log muestra 'cambio=' de cada captura para calibrarlo)
+# Micrófono (Whisper en CPU)
+mic_enabled = true
+mic_device = "FaceCam 1000X" # parte del nombre, o el número de `uv run vtuber-cli mics`; "" = predeterminado
+whisper_model = "small"
+language = "es"
+energy_threshold = 0.004 # volumen mínimo para empezar una frase (además se adapta a 4× el ruido de fondo)
+silence_ms = 700       # silencio que cierra una frase
+
+[warudo]
+# Puerto del asset "AI Chat Bridge" (script Playground warudo/AIChatBridge.cs)
+url = "ws://127.0.0.1:19500"
+# Tiempo que se mantiene una expresión antes de volver a neutral (0 = permanente)
+expression_hold_ms = 5000
+
+[server]
+host = "127.0.0.1"
+port = 8000
+
+[persona]
+name = "Shipilka"
+description = """
+Eres una VTuber alegre, curiosa y un poco traviesa que charla con su audiencia.
+Te encanta hablar de videojuegos, anime y música. Eres cariñosa pero tienes carácter.
+"""
+
+[agent]
+# Si es true, Gemma puede pedir gestos/expresiones explícitamente con herramientas.
+# Si tu modelo no maneja bien las tool calls, ponlo a false: el modelo de decisión
+# seguirá animando al personaje en cada respuesta.
+use_action_tools = true
+data_dir = "data"
+
+[reaction]
+# Gesto que se lanza en cuanto llega el mensaje del usuario (clave de [gestures], "" = ninguno).
+# Con [talk] activo no hace falta: el personaje empieza a gesticular al hablar.
+on_user_message = ""
+emotion_question = "Which emotion does the character show in their reply to the user?"
+gesture_question = "Which expressive body and hand gesture should the character perform to accompany this reply? Prefer a visible gesture over standing still."
+hand_question = "Which hand shape fits the character's reply best?"
+# Tiempo que se mantiene la pose de mano antes de soltarla
+hand_hold_ms = 4000
+# Recorte del texto enviado al modelo de decisión (límite del modelo: 1024 tokens)
+max_state_chars = 2400
+
+[speech]
+# El texto se muestra a ritmo de habla (como si el personaje lo dijera en voz alta).
+# La gesticulación dura lo mismo que esta "voz", y el gesto final va al terminar.
+enabled = true
+# ~15 caracteres/s ≈ 150 palabras por minuto en español
+chars_per_second = 15
+# Pausas extra (ms) tras signos de puntuación
+pause_comma_ms = 150
+pause_sentence_ms = 400
+
+[animation]
+# Las animaciones de cuerpo se encadenan con un fundido (crossfade): el siguiente clip
+# empieza este tiempo antes de que acabe el actual, así el personaje pasa de clip a clip
+# sin volver a la animación de reposo de Warudo. El reposo solo aparece al terminar el turno.
+crossfade_ms = 600
+# Una reacción que tendría que esperar más que esto se descarta (queda vieja).
+max_wait_ms = 10000
+
+[talk]
+# Al empezar cada respuesta el personaje gesticula con brazos y manos mientras "habla".
+# El estilo lo elige el modelo de decisión a partir del mensaje del usuario.
+enabled = true
+question = "In which speaking style should the character answer this message, gesturing with arms and hands?"
+# "upper" = solo brazos/cabeza, el resto del cuerpo sigue su animación de reposo
+mask = "upper"
+
+# ---------------------------------------------------------------------------
+# Emociones -> expresión de Warudo. `expression` es el nombre EXACTO de la
+# expresión del personaje (usa `uv run vtuber-cli info` para listarlas).
+# expression = "" significa volver a neutral.
+# `label` es el texto en inglés que ve el modelo de decisión.
+# ---------------------------------------------------------------------------
+[emotions.neutral]
+label = "neutral, calm"
+expression = ""
+
+[emotions.happy]
+label = "happy, joyful"
+expression = "happy"
+
+[emotions.fun]
+label = "playful, amused, teasing"
+expression = "relaxed"
+
+[emotions.sad]
+label = "sad, sorry, disappointed"
+expression = "sad"
+
+[emotions.angry]
+label = "angry, annoyed"
+expression = "angry"
+
+[emotions.surprised]
+label = "surprised, amazed, shocked"
+expression = "surprised"
+
+[emotions.shy]
+label = "shy, embarrassed, flustered"
+# El modelo no tiene expresión de vergüenza: se usa la sonrisa suave (relaxed)
+expression = "relaxed"
+
+# ---------------------------------------------------------------------------
+# Gestos -> animación one-shot de Warudo. `uri` sale de:  uv run vtuber-cli animations [filtro]
+# Con uri = "" el gesto se elige pero no se reproduce nada.
+# look = "camera" | "away" | "default" | "" (sin cambio)
+# mask = "full" (cuerpo entero, por defecto) | "upper" (brazos+cabeza) | "lower"
+# ---------------------------------------------------------------------------
+[gestures.none]
+label = "stand completely still (only for very dull replies)"
+uri = ""
+
+[gestures.wave]
+label = "wave the hand to greet: hello, hi, goodbye, see you"
+uri = "character-animation://resources/Animations/KawaiiAnimations/KA_Idle45_WaveHandSlightly"
+look = "camera"
+
+[gestures.nod]
+label = "nod in agreement"
+uri = "character-animation://resources/Animations/AGIA/02_Layers/AGIA_Layer_nod_twice_01"
+mask = "upper"
+
+[gestures.shake_head]
+label = "shake head, disagree or refuse"
+uri = "character-animation://resources/Animations/AGIA/02_Layers/AGIA_Layer_shake_head_01"
+mask = "upper"
+
+[gestures.think]
+label = "think, ponder, hand on chin"
+uri = "character-animation://resources/Animations/AGIA/01_Idles/AGIA_Idle_think_01"
+look = "away"
+
+[gestures.laugh]
+label = "laugh"
+uri = "character-animation://resources/Animations/KawaiiAnimations/KA_Idle28_Laugh"
+
+[gestures.unsure]
+label = "tilt head, unsure or curious"
+uri = "character-animation://resources/Animations/AGIA/02_Layers/AGIA_Layer_tilt_neck_01"
+mask = "upper"
+
+[gestures.bow]
+label = "bow to say thank you"
+uri = "character-animation://resources/Animations/KawaiiAnimations/KA_Idle44_GreetingBow"
+
+[gestures.cheer]
+label = "cheer, celebrate good news"
+# "Yay" (5,7 s). La alternativa "KA_Idle25_Cheers" dura 18 s.
+uri = "character-animation://resources/Animations/KawaiiAnimations/KA_Idle36_Yay"
+look = "camera"
+
+[gestures.surprised]
+label = "react surprised, amazed, shocked"
+uri = "character-animation://resources/Animations/KawaiiAnimations/KA_Idle29_Surprised"
+
+[gestures.sad]
+label = "sad, sorrowful, comforting"
+uri = "character-animation://resources/Animations/KawaiiAnimations/KA_Idle38_Cry"
+
+[gestures.angry]
+label = "angry, annoyed"
+uri = "character-animation://resources/Animations/KawaiiAnimations/KA_Idle27_Angry"
+
+[gestures.cute]
+label = "act cute and affectionate"
+uri = "character-animation://resources/Animations/AGIA/03_Others/AGIA_Other_cute_02_emote_01"
+look = "camera"
+
+[gestures.shy]
+label = "act shy and flustered, cover face (blushing, romantic teasing)"
+uri = "character-animation://resources/Animations/KawaiiAnimations/KA_Idle18_Shy"
+look = "away"
+
+[gestures.point]
+label = "point at the user"
+uri = "character-animation://resources/Animations/AGIA/03_Others/AGIA_Other_point_finger_01_emote"
+look = "camera"
+
+[gestures.dance]
+label = "dance (only if dancing is mentioned)"
+# 7,3 s. Los bailes de la categoría DANCE duran 20-25 s.
+uri = "character-animation://resources/Animations/KawaiiAnimations/KA_Idle24_Dance04"
+
+# ---------------------------------------------------------------------------
+# Estilos al hablar -> brazos/manos mientras aparece la respuesta.
+# Se reproducen en secuencia: start (una vez) -> uri en bucle mientras Gemma escribe
+# -> end al terminar la respuesta, y después el gesto de la reacción.
+# Si `uri` termina en "_Loop", start/end se deducen ("_Start"/"_End").
+# Lista completa:  uv run vtuber-cli animations Speak
+# ---------------------------------------------------------------------------
+[talk_styles.normal]
+label = "normal friendly chat"
+uri = "character-animation://resources/Animations/KawaiiAnimations/KA_Speak01_Normal_Loop"
+
+[talk_styles.explaining]
+label = "explaining or teaching something"
+uri = "character-animation://resources/Animations/KawaiiAnimations/KA_Speak02_Explaining_Loop"
+
+[talk_styles.excited]
+label = "excited, enthusiastic"
+uri = "character-animation://resources/Animations/KawaiiAnimations/KA_Speak03_Excited_Loop"
+
+[talk_styles.calm]
+label = "calm, gentle, comforting"
+uri = "character-animation://resources/Animations/KawaiiAnimations/KA_Speak04_Calm_Loop"
+
+[talk_styles.chatty]
+label = "chatty gossip, storytelling"
+uri = "character-animation://resources/Animations/KawaiiAnimations/KA_Speak07_Chatty_Loop"
+
+[talk_styles.scolding]
+label = "scolding, pointing finger, annoyed"
+uri = "character-animation://resources/Animations/KawaiiAnimations/KA_Speak05_PointingFingerScolding_Loop"
+
+[talk_styles.pouting]
+label = "pouting with arms crossed, offended"
+uri = "character-animation://resources/Animations/KawaiiAnimations/KA_Speak08_ArmsCrossedPouting_Loop"
+
+[talk_styles.shy]
+label = "shy, embarrassed"
+uri = "character-animation://resources/Animations/KawaiiAnimations/KA_Speak10_Shy_Loop"
+
+# ---------------------------------------------------------------------------
+# Poses de mano (dedos) -> Override Hand Poses de Warudo.
+# Lista completa:  uv run vtuber-cli handposes
+# hand = "right" | "left" | "both"
+# ---------------------------------------------------------------------------
+[hand_poses.none]
+label = "relaxed natural hands"
+uri = ""
+
+[hand_poses.peace]
+label = "peace sign, V sign (happy, cute, greeting)"
+uri = "character-animation://resources/Animations/Handy Poses/Peace"
+hand = "right"
+
+[hand_poses.thumbs_up]
+label = "thumbs up (approval, good job, agree)"
+uri = "character-animation://resources/Animations/Handy Poses/Thumbs Up"
+hand = "right"
+
+[hand_poses.ok]
+label = "OK sign (fine, understood)"
+uri = "character-animation://resources/Animations/Handy Poses/Okey Dokey"
+hand = "right"
+
+[hand_poses.point]
+label = "pointing index finger (explaining, pointing at the user)"
+uri = "character-animation://resources/Animations/Handy Poses/Point 1"
+hand = "right"
+
+[hand_poses.fist]
+label = "clenched fists (determined, angry, fighting spirit)"
+uri = "character-animation://resources/Animations/Handy Poses/Fist"
+hand = "both"
+
+[hand_poses.open]
+label = "open palms (surprise, honesty, welcome)"
+uri = "character-animation://resources/Animations/Handy Poses/Splayed Out"
+hand = "both"
+
+[hand_poses.rock]
+label = "rock on horns sign (music, hype)"
+uri = "character-animation://resources/Animations/Handy Poses/Rock On"
+hand = "right"

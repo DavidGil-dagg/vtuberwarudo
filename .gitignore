@@ -1,0 +1,17 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Datos locales (historial de chats y memoria del personaje)
+data/
+
+# Binarios y modelos descargados (modo visión)
+tools/
+models/

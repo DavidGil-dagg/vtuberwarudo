@@ -1,0 +1,44 @@
+[project]
+name = "vtuber-warudo"
+version = "0.1.0"
+description = "Chat con un personaje de Warudo: LangChain Deep Agents + LM Studio + modelo de decisión para animaciones"
+requires-python = ">=3.12"
+dependencies = [
+    "aiosqlite>=0.22.1",
+    "deepagents>=0.7.38",
+    "fastapi>=0.162.7",
+    "faster-whisper>=1.2.1",
+    "httpx>=0.28.1",
+    "jinja2>=3.1.6",
+    "langchain-openai>=1.8.0",
+    "langgraph-checkpoint-sqlite>=3.1.3",
+    "mss>=10.2.0",
+    "numpy>=2.5.4",
+    "pillow>=13.0.0",
+    "sounddevice>=0.5.6",
+    "startlux-decide",
+    "uvicorn[standard]>=0.54.0",
+    "websockets>=17.4",
+]
+
+[project.scripts]
+vtuber-chat = "vtuber_warudo.server:main"
+vtuber-cli = "vtuber_warudo.cli:main"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.uv.sources]
+startlux-decide = { git = "https://github.com/StartLuxLabs/StartLux-Decision" }
+
+[build-system]
+requires = ["uv_build>=0.9.11,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+]
