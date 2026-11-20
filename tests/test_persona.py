@@ -65,9 +65,9 @@ def test_prepend_keeps_existing_system_prompt():
 
 def test_persona_prompt_has_no_fixed_name():
     cfg = load_config()
-    cfg.persona.name = "Shipilka"
+    cfg.persona.name = "VtuberWarudo"
     prompt = agent_mod.persona_prompt(cfg, with_tools=False)
-    assert "Shipilka" not in prompt
+    assert "VtuberWarudo" not in prompt
     assert cfg.persona.description.strip()[:20] in prompt
 
 

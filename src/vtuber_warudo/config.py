@@ -77,7 +77,7 @@ class ServerConfig:
 
 @dataclass
 class PersonaConfig:
-    name: str = "Shipilka"
+    name: str = "VtuberWarudo"
     description: str = ""
 
 
