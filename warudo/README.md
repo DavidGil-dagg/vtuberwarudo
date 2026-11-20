@@ -6,8 +6,8 @@
 ## Install
 
 ```powershell
-.\scripts\install-playground.ps1                      # default: C:\Program Files (x86)\Steam\steamapps\common\Warudo
-.\scripts\install-playground.ps1 -WarudoPath "<Warudo folder>"
+.\scripts\install-playground.ps1                      # finds Warudo in your Steam libraries
+.\scripts\install-playground.ps1 -WarudoPath "<Steam library>\steamapps\common\Warudo"
 ```
 
 It copies the file to `Warudo_Data\StreamingAssets\Playground\`. Warudo hot-reloads it.

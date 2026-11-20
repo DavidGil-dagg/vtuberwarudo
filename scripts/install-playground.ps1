@@ -9,7 +9,7 @@
 
 .PARAMETER WarudoPath
     Warudo install folder (the one containing Warudo.exe).
-    Default: C:\Program Files (x86)\Steam\steamapps\common\Warudo
+    Default: searched in every Steam library (registry SteamPath + libraryfolders.vdf).
 
 .EXAMPLE
     .\scripts\install-playground.ps1
@@ -17,10 +17,33 @@
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string]$WarudoPath = "C:\Program Files (x86)\Steam\steamapps\common\Warudo"
+    [string]$WarudoPath = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+function Find-Warudo {
+    $steam = (Get-ItemProperty -Path HKCU:\Software\Valve\Steam -ErrorAction SilentlyContinue).SteamPath
+    if (-not $steam) { return $null }
+    $libraries = @($steam)
+    $vdf = Join-Path $steam "steamapps\libraryfolders.vdf"
+    if (Test-Path -LiteralPath $vdf) {
+        foreach ($m in [regex]::Matches((Get-Content -Raw -LiteralPath $vdf), '"path"\s+"([^"]+)"')) {
+            $libraries += $m.Groups[1].Value -replace '\\\\', '\'
+        }
+    }
+    foreach ($lib in $libraries | Select-Object -Unique) {
+        $candidate = Join-Path $lib "steamapps\common\Warudo"
+        if (Test-Path -LiteralPath (Join-Path $candidate "Warudo_Data")) { return $candidate }
+    }
+    return $null
+}
+
+if (-not $WarudoPath) {
+    $WarudoPath = Find-Warudo
+    if (-not $WarudoPath) { throw "Warudo not found in your Steam libraries. Pass -WarudoPath with your Warudo install folder." }
+    Write-Host "Warudo: $WarudoPath"
+}
 
 $source = Join-Path $PSScriptRoot "..\warudo\AIChatBridge.cs" | Resolve-Path
 $dataDir = Join-Path $WarudoPath "Warudo_Data"

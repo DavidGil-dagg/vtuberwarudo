@@ -86,6 +86,7 @@ Todo funciona sin conexión, en una sola PC con una GPU de 12 GB.
 ### 1. Dependencias de Python
 
 ```powershell
+git clone https://github.com/DavidGil-dagg/vtuberwarudo.git
 cd vtuberwarudo
 uv sync
 ```
@@ -94,7 +95,7 @@ uv sync
 
 ### 2. LM Studio
 
-Descarga `google/gemma-4-12b-qat` en LM Studio. También conviene descargar ahí el GGUF de StartLux y su `mmproj`, que es como se instaló aquí (en `%USERPROFILE%\.lmstudio\models\startlux-models\…`). Si están en otra carpeta, pásala a `start-startlux.ps1` con `-ModelDir`.
+Descarga `google/gemma-4-12b-qat` en LM Studio. También conviene descargar ahí el GGUF de StartLux y su `mmproj` (`startlux-models/StartLux-Decision-v1.1-4B-Instant-GGUF`). `start-startlux.ps1` los busca solo en la carpeta de modelos de LM Studio (la que indica `~\.lmstudio\settings.json`). Si los tienes en otro sitio, pásale la carpeta con `-ModelDir`.
 
 ### 3. llama.cpp para StartLux (`tools\llama.cpp`)
 
@@ -118,7 +119,7 @@ uvx --from huggingface_hub hf download startlux-models/StartLux-Decision-v1.1-4B
 powershell -ExecutionPolicy Bypass -File scripts\install-playground.ps1
 ```
 
-Copia `warudo\AIChatBridge.cs` a `Warudo_Data\StreamingAssets\Playground\`, y Warudo lo recarga en caliente. Después, en Warudo:
+Busca Warudo en tus bibliotecas de Steam (o usa `-WarudoPath "<carpeta de Warudo>"`) y copia `warudo\AIChatBridge.cs` a `Warudo_Data\StreamingAssets\Playground\`, y Warudo lo recarga en caliente. Después, en Warudo:
 
 1. **Assets → + → AI Chat Bridge** → elige tu **Character**. El panel debe mostrar `Listening on ws://127.0.0.1:19500`.
 2. **Expresiones VRM** (happy/Joy, angry, sad/Sorrow, relaxed/Fun, surprised): si el personaje no las tiene, la app las importa sola al conectar (`[warudo] auto_import_expressions`).

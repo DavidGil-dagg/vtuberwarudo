@@ -11,7 +11,9 @@
 #   cuesta como máximo 1024 tokens, así que el prompt cabe de sobra.
 # - Las DLL de CUDA 12 se toman de LM Studio (no hace falta descargar cudart).
 param(
-    [string]$ModelDir = "$env:USERPROFILE\.lmstudio\models\startlux-models\StartLux-Decision-v1.1-4B-Instant-GGUF",
+    # Carpeta con el GGUF y el mmproj. Vacío = la carpeta de modelos de LM Studio
+    # ("downloadsFolder" de ~\.lmstudio\settings.json) + startlux-models\...
+    [string]$ModelDir = "",
     [string]$Gguf = "StartLux-Decision-v1.1-4B-Instant-Q4_K_M.gguf",
     [string]$Mmproj = "mmproj-StartLux-Decision-v1.1-4B-Instant-F16.gguf",
     [int]$GpuLayers = 99,
@@ -22,6 +24,22 @@ param(
     [int]$LlamaPort = 8081,
     [int]$DecidePort = 8090
 )
+
+if (-not $ModelDir) {
+    $lmModels = Join-Path $env:USERPROFILE ".lmstudio\models"
+    $lmSettings = Join-Path $env:USERPROFILE ".lmstudio\settings.json"
+    if (Test-Path $lmSettings) {
+        try {
+            $folder = (Get-Content -Raw $lmSettings | ConvertFrom-Json).downloadsFolder
+            if ($folder) { $lmModels = $folder }
+        } catch {}
+    }
+    $ModelDir = Join-Path $lmModels "startlux-models\StartLux-Decision-v1.1-4B-Instant-GGUF"
+}
+if (-not (Test-Path (Join-Path $ModelDir $Gguf))) {
+    Write-Warning "No encuentro $Gguf en '$ModelDir'. Pasa la carpeta con -ModelDir."
+    exit 1
+}
 
 $root = Split-Path $PSScriptRoot -Parent
 $server = Join-Path $root "tools\llama.cpp\llama-server.exe"
