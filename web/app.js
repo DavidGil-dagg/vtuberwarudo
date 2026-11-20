@@ -20,6 +20,7 @@ const $form = document.getElementById("composer");
 const $name = document.getElementById("name");
 const $stLm = document.getElementById("st-lm");
 const $stWarudo = document.getElementById("st-warudo");
+const $stDec = document.getElementById("st-dec");
 
 function storageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function storageSet(k, v) { try { localStorage.setItem(k, v); } catch { /* ignore */ } }
@@ -133,6 +134,8 @@ function handle(msg) {
       if (msg.name) { $name.textContent = msg.name; document.title = `${msg.name} · Chat`; }
       setPill($stLm, msg.lmstudio);
       setPill($stWarudo, msg.warudo);
+      setPill($stDec, msg.decision);
+      if (msg.decision_backend) $stDec.textContent = msg.decision_backend === "jev" ? "jev" : "StartLux";
       break;
     case "token": {
       const m = ensureBot();

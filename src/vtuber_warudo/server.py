@@ -44,6 +44,34 @@ class AppState:
             await _safe_send(ws, data)
 
 
+async def decision_ok(st: "AppState") -> bool:
+    """¿Responde el modelo de decisión? (StartLux en su servidor; jev va con LM Studio)."""
+    healthy = getattr(st.decision, "healthy", None)
+    return await healthy() if healthy else await lmstudio_ok(st.cfg)
+
+
+async def full_status(st: "AppState") -> dict:
+    lm, dec = await asyncio.gather(lmstudio_ok(st.cfg), decision_ok(st))
+    return {"type": "status", "lmstudio": lm, "decision": dec, "decision_backend": st.cfg.decision.backend,
+            "warudo": st.warudo.connected, "name": st.cfg.persona.name}
+
+
+async def _status_loop(st: "AppState") -> None:
+    """Refresca los indicadores de la web cada 10 s y avisa en el log si StartLux cae."""
+    last_dec = None
+    while True:
+        await asyncio.sleep(10)
+        try:
+            s = await full_status(st)
+            if s["decision"] is False and last_dec is not False:
+                log.warning("El modelo de decisión (%s) no responde: emociones y gestos usarán la opción por defecto. "
+                            "¿Está arrancado scripts\\start-startlux.ps1?", st.cfg.decision.backend)
+            last_dec = s["decision"]
+            await st.broadcast(s)
+        except Exception:  # noqa: BLE001
+            log.debug("status loop", exc_info=True)
+
+
 async def lmstudio_ok(cfg: Config) -> bool:
     try:
         async with httpx.AsyncClient(timeout=2) as c:
@@ -80,7 +108,12 @@ async def lifespan(app: FastAPI):
         st.vision = VisionMode(cfg, decision, avatar, emit=st.broadcast, is_busy=lambda: st.turns_active > 0)
         app.state.vt = st
         log.info("Listo en http://%s:%s (decisiones: %s)", cfg.server.host, cfg.server.port, cfg.decision.backend)
+        if not await decision_ok(st):
+            log.warning("El modelo de decisión (%s) NO responde: arranca scripts\\start-startlux.ps1 "
+                        "o las emociones y gestos usarán siempre la opción por defecto.", cfg.decision.backend)
+        status_task = asyncio.create_task(_status_loop(st))
         yield
+        status_task.cancel()
         await st.vision.stop()
 
     await avatar.director.close()
@@ -92,6 +125,16 @@ app = FastAPI(title="VtuberWarudo", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 
 
+@app.middleware("http")
+async def no_cache_web(request, call_next):
+    """La web es local y cambia con el proyecto: que el navegador revalide siempre
+    (si no, tras actualizar se sigue usando un app.js viejo de la caché)."""
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.get("/")
 async def index():
     return FileResponse(WEB_DIR / "index.html")
@@ -100,7 +143,7 @@ async def index():
 @app.get("/api/status")
 async def status():
     st: AppState = app.state.vt
-    return {"lmstudio": await lmstudio_ok(st.cfg), "warudo": st.warudo.connected, "name": st.cfg.persona.name}
+    return await full_status(st)
 
 
 @app.get("/api/vision")
@@ -205,9 +248,7 @@ async def ws_endpoint(ws: WebSocket):
     await ws.accept()
     st: AppState = app.state.vt
     st.sockets.add(ws)
-    await _safe_send(
-        ws, {"type": "status", "warudo": st.warudo.connected, "lmstudio": await lmstudio_ok(st.cfg), "name": st.cfg.persona.name}
-    )
+    await _safe_send(ws, await full_status(st))
     await _safe_send(ws, {**st.vision.status(), "available": getattr(st.decision, "supports_images", False)})
     busy = asyncio.Lock()
     try:
@@ -230,6 +271,9 @@ async def ws_endpoint(ws: WebSocket):
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # Las peticiones HTTP (incluidas las de comprobación de estado cada 10 s) solo si fallan
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpx2").setLevel(logging.WARNING)
     cfg = load_config()
     uvicorn.run("vtuber_warudo.server:app", host=cfg.server.host, port=cfg.server.port, log_level="info")
 

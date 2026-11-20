@@ -34,6 +34,7 @@ One JSON object per text message. Every command gets exactly one reply:
 | `{"cmd":"handPose","hand":"left"\|"right"\|"both","pose":"<uri>","weight":1,"holdMs":4000}` | Override Hand Poses on that hand; `pose:""` releases it; released again after `holdMs`. | `hand`, `pose` |
 | `{"cmd":"listResources","type":"CharacterAnimation"\|"CharacterHandPose","filter":"…"}` | Lists Warudo resources of that type (`listAnimations` = same with `CharacterAnimation`). | `count`, `animations[]` (`uri`, `label`, `category`, `provider`) |
 | `{"cmd":"clipInfo","uris":["…"]}` | Clip lengths without playing anything. | `clips{uri: {lengthMs, loop}}` |
+| `{"cmd":"importVrmExpressions"}` | Same as the character's "Import VRM Expressions" button (async; poll `info`). | `before`, `importable` |
 
 `info` also returns `characters[]` (every character in the scene with `expressions`, `expressionNames`, `vrmClips`, `importableVrmExpressions`). One-shot animations chained with a crossfade (the next one started before the previous ends) only reset root motion when the last one launched finishes.
 

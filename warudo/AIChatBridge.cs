@@ -284,6 +284,7 @@ public class AIChatBridge : Asset
                 case "listResources": return CmdListResources(id, cmd, request, (string)request["type"] ?? "CharacterAnimation");
                 case "handPose": return CmdHandPose(id, cmd, request);
                 case "clipInfo": return CmdClipInfo(id, cmd, request);
+                case "importVrmExpressions": return CmdImportVrmExpressions(id, cmd);
                 case null: return Fail(id, null, "missing \"cmd\"");
                 default: return Fail(id, cmd, "unknown cmd \"" + cmd + "\"");
             }
@@ -506,6 +507,24 @@ public class AIChatBridge : Asset
             default:
                 return Fail(id, cmd, "unknown mode \"" + mode + "\" (use camera, away or default)");
         }
+    }
+
+    // Same as the character's "Import VRM Expressions" button: creates the expressions
+    // (happy, angry, sad, relaxed, surprised...) from the model's VRM clips. Used when the
+    // character has none (e.g. the scene was saved before importing them). The import runs
+    // asynchronously in Warudo; poll "info" to see the result.
+    private JObject CmdImportVrmExpressions(JToken id, string cmd)
+    {
+        string error;
+        if (!CharacterReady(out error)) return Fail(id, cmd, error);
+        var before = ExpressionNames().ToList();
+        var importable = SafeList(() => Character.GetEligibleVRMExpressionNames());
+        if (importable.Count == 0) return Fail(id, cmd, "the character's model has no VRM expressions to import");
+        Character.TriggerImportVRMExpressions();
+        var reply = Ok(id, cmd);
+        reply["before"] = new JArray(before.Cast<object>().ToArray());
+        reply["importable"] = importable;
+        return reply;
     }
 
     // Clip lengths without playing anything: {"cmd":"clipInfo","uris":["...", ...]}

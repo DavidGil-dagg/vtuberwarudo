@@ -43,6 +43,9 @@ silence_ms = 700       # silencio que cierra una frase
 url = "ws://127.0.0.1:19500"
 # Tiempo que se mantiene una expresión antes de volver a neutral (0 = permanente)
 expression_hold_ms = 5000
+# Si al conectar el personaje no tiene las expresiones de [emotions], importarlas del VRM
+# (igual que el botón "Import VRM Expressions"). Guarda la escena para no repetirlo.
+auto_import_expressions = true
 
 [server]
 host = "127.0.0.1"

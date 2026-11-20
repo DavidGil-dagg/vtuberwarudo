@@ -66,6 +66,7 @@ class VisionConfig:
 class WarudoConfig:
     url: str = "ws://127.0.0.1:19500"
     expression_hold_ms: int = 5000
+    auto_import_expressions: bool = True  # importar las expresiones VRM si el personaje no las tiene
 
 
 @dataclass

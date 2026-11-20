@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>VtuberWarudo Chat</title>
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v=2" />
 </head>
 <body>
   <div class="app">
@@ -15,6 +15,7 @@
       </div>
       <div class="status">
         <span class="pill" id="st-lm" title="LM Studio">LM Studio</span>
+        <span class="pill" id="st-dec" title="Modelo de decisión (emociones y gestos). Si está en rojo, arranca scripts\start-startlux.ps1">StartLux</span>
         <span class="pill" id="st-warudo" title="Warudo (AI Chat Bridge)">Warudo</span>
         <button id="vision-btn" class="ghost" type="button" title="El personaje reacciona a tu pantalla y a tu micrófono" hidden>👁 Modo visión</button>
         <button id="new-chat" class="ghost" type="button" title="Empezar una conversación nueva">Nueva conversación</button>
@@ -41,6 +42,6 @@
       <button id="send" type="submit">Enviar</button>
     </form>
   </div>
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=2"></script>
 </body>
 </html>

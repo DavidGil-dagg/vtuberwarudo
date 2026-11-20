@@ -22,6 +22,34 @@ def _ok(reply: dict | None) -> bool:
     return bool(reply and reply.get("ok"))
 
 
+# Las expresiones importadas del VRM se llaman distinto según la versión del modelo / de
+# Warudo: VRM 1.0 (happy, sad, relaxed...) o VRM 0.x (Joy, Sorrow, Fun...). Son equivalentes.
+_EXPRESSION_ALIASES = [
+    {"happy", "joy"},
+    {"sad", "sorrow"},
+    {"relaxed", "fun"},
+    {"angry"},
+    {"surprised"},
+    {"neutral"},
+]
+
+
+def resolve_expression(name: str, available: list[str]) -> str | None:
+    """Nombre real de la expresión en el personaje (sin distinguir mayúsculas y aceptando el
+    equivalente VRM 0.x / 1.0). None si el personaje no tiene ninguna equivalente."""
+    if not name:
+        return None
+    by_lower = {a.lower(): a for a in available}
+    if name.lower() in by_lower:
+        return by_lower[name.lower()]
+    for group in _EXPRESSION_ALIASES:
+        if name.lower() in group:
+            for alias in group:
+                if alias in by_lower:
+                    return by_lower[alias]
+    return None
+
+
 class Avatar:
     def __init__(self, cfg: Config, warudo: WarudoClient):
         self.cfg = cfg
@@ -30,6 +58,7 @@ class Avatar:
         # Destino de eventos para la UI durante el turno (lo pone el servidor)
         self.event_sink: Callable[[dict], Awaitable[None]] | None = None
         self._bg: set[asyncio.Task] = set()
+        self._expressions: list[str] = []  # expresiones reales del personaje (de "info")
 
     @property
     def emotion_keys(self) -> list[str]:
@@ -46,8 +75,41 @@ class Avatar:
         return [u for u in uris if u]
 
     async def prefetch(self) -> None:
-        """Pide a Warudo la duración de todos los clips configurados (para planificar el turno)."""
+        """Al conectar con Warudo: duración de los clips (para planificar el turno) y
+        comprobación de que el personaje tiene las expresiones que usan las emociones."""
         await self.director.prefetch_lengths(self.all_clip_uris())
+        await self.ensure_expressions()
+
+    async def ensure_expressions(self) -> list[str]:
+        """Si el personaje no tiene expresiones (p.ej. la escena se guardó antes de importarlas),
+        las importa desde el VRM. Devuelve las expresiones que tiene al final."""
+        info = await self.warudo.info() or {}
+        current = list(info.get("expressions") or [])
+        self._expressions = current
+        needed = {e.expression for e in self.cfg.emotions.values() if e.expression}
+        missing = sorted(n for n in needed if resolve_expression(n, current) is None)
+        if not missing:
+            return current
+        if not self.cfg.warudo.auto_import_expressions:
+            log.warning("Al personaje le faltan expresiones %s (auto_import_expressions = false)", missing)
+            return current
+        log.warning("Al personaje le faltan expresiones %s: importándolas desde el VRM...", missing)
+        r = await self.warudo.send({"cmd": "importVrmExpressions"}, wait=True, timeout=5)
+        if not _ok(r):
+            log.warning("No se pudieron importar las expresiones: %s", (r or {}).get("error"))
+            return current
+        for _ in range(20):  # la importación es asíncrona en Warudo
+            await asyncio.sleep(0.25)
+            current = list(((await self.warudo.info()) or {}).get("expressions") or [])
+            if all(resolve_expression(n, current) for n in needed):
+                break
+        self._expressions = current
+        still = sorted(n for n in needed if resolve_expression(n, current) is None)
+        if still:
+            log.warning("Tras importar siguen faltando %s (expresiones del personaje: %s)", still, current)
+        else:
+            log.info("Expresiones importadas: %s. Guarda la escena en Warudo para conservarlas.", current)
+        return current
 
     def _spawn(self, coro) -> None:
         task = asyncio.create_task(coro)
@@ -63,7 +125,14 @@ class Avatar:
             return False
         if not emo.expression:
             return _ok(await self.warudo.neutral())
-        return _ok(await self.warudo.expression(emo.expression, self.cfg.warudo.expression_hold_ms))
+        name = resolve_expression(emo.expression, self._expressions) or emo.expression
+        ok = _ok(await self.warudo.expression(name, self.cfg.warudo.expression_hold_ms))
+        if not ok and not self._expressions:
+            # Aún no se conocían las expresiones del personaje: consultarlas y reintentar una vez
+            await self.ensure_expressions()
+            name = resolve_expression(emo.expression, self._expressions)
+            ok = bool(name) and _ok(await self.warudo.expression(name, self.cfg.warudo.expression_hold_ms))
+        return ok
 
     async def hand_pose(self, key: str) -> bool:
         """Pose de dedos. La clave sin uri (p.ej. "none") suelta la pose."""

@@ -120,7 +120,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install-playground.ps1
 Copia `warudo\AIChatBridge.cs` a `Warudo_Data\StreamingAssets\Playground\`, y Warudo lo recarga en caliente. Después, en Warudo:
 
 1. **Assets → + → AI Chat Bridge** → elige tu **Character**. El panel debe mostrar `Listening on ws://127.0.0.1:19500`.
-2. En el personaje, **importa las expresiones VRM** (happy, angry, sad, relaxed, surprised).
+2. **Expresiones VRM** (happy/Joy, angry, sad/Sorrow, relaxed/Fun, surprised): si el personaje no las tiene, la app las importa sola al conectar (`[warudo] auto_import_expressions`).
 3. **Guarda la escena.** Si no, al reiniciar Warudo se pierden el asset y las expresiones.
 
 `tools/`, `models/` y `data/` están en `.gitignore`.
@@ -144,7 +144,7 @@ powershell -ExecutionPolicy Bypass -File scripts\load-models.ps1 -GemmaGpu 0.75
 uv run vtuber-chat
 ```
 
-Abre **http://localhost:8000**.
+Abre **http://localhost:8000**. Los tres indicadores de arriba (**LM Studio**, **StartLux** y **Warudo**) deben estar en verde. Se comprueban cada 10 s.
 
 ---
 
@@ -277,6 +277,7 @@ Es un *asset* de Playground. Abre un servidor WebSocket (WebSocketSharp) en `127
 | `{"cmd":"idle","uri":"…"}` | Animación de reposo por defecto |
 | `{"cmd":"listResources","type":"CharacterAnimation"\|"CharacterHandPose","filter":"…"}` | Lista de animaciones o poses (URI, nombre, categoría) |
 | `{"cmd":"clipInfo","uris":[…]}` | Duración de clips sin reproducirlos |
+| `{"cmd":"importVrmExpressions"}` | Igual que el botón "Import VRM Expressions" del personaje |
 
 Solo el último clip lanzado restablece el *root motion* al terminar, para que no haya saltos al encadenar clips con fundido.
 
@@ -336,7 +337,7 @@ uv run vtuber-cli vision-test "¡he ganado!"    # una decisión del modo visión
 uv run pytest
 ```
 
-Hay 39 tests y no necesitan GPU, Warudo ni LM Studio:
+Hay 42 tests y no necesitan GPU, Warudo ni LM Studio:
 
 - **Decisiones:** formato del prompt de decisión y parseo de la letra elegida.
 - **Animación:** encadenado sin huecos ni cortes, el End coincide con el final del texto, el gesto llega tarde y sustituye al Loop, aceleración de gestos que no caben.
@@ -366,9 +367,18 @@ Para comprobar que el script C# compila contra los DLL reales de Warudo, crea un
 - **Cada respuesta tarda 40–110 s:** LM Studio descarga un modelo cuando cargas otro bajo demanda (`unloadPreviousJITModelOnLoad`). Carga los modelos con los scripts, que hacen cargas explícitas que no se descargan solas.
 - **Respuestas vacías o muy lentas:** el *thinking* de Gemma está activo. Comprueba `reasoning_effort = "none"`.
 
+### Las emociones no se ven (siempre *neutral*, sin gesto)
+
+- **Indicador StartLux en rojo:** el servidor de decisiones no está arrancado. Cada decisión falla y se usa la opción por defecto. Arranca `scripts\start-startlux.ps1`.
+  - **No basta con cargar StartLux en LM Studio:** necesita su propio servidor (lectura bidireccional del prompt). Además, en LM Studio ocupa VRAM que necesita Gemma.
+  - El log del servidor avisa con `El modelo de decisión (startlux) NO responde`.
+- **El personaje no tiene expresiones:** con `auto_import_expressions = true`, la app las importa del VRM al conectar con Warudo.
+  - Según la versión, se llaman como en VRM 1.0 (*happy, sad, relaxed…*) o como en VRM 0.x (*Joy, Sorrow, Fun…*). La app acepta las dos convenciones.
+  - **Guarda la escena** para no tener que reimportarlas cada vez.
+
 ### Warudo
 
-- **`unknown expression "happy"`:** el personaje no tiene expresiones. Impórtalas desde VRM y **guarda la escena**; `vtuber-cli info` las lista.
+- **`unknown expression "…"`:** el personaje no tiene esa expresión. `vtuber-cli info` lista las que tiene.
 - **`No se pudo conectar a Warudo`:** falta el asset *AI Chat Bridge* en la escena, o no tiene personaje asignado.
 - **El personaje vuelve al reposo entre animaciones:** sube `crossfade_ms`.
 
